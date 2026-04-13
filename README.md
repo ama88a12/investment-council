@@ -13,4 +13,3 @@
 ## 🛠️ التقنيات
 * React.js
 * Tailwind CSS
-* مدمج بمنهجية التفكير النظمي الخاص بحساب @PowerBalance88
