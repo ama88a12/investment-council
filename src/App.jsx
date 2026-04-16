@@ -1,36 +1,13 @@
-// ==============================================
-// 🚀 Investment Council SaaS (FINAL - OpenAI + Market Data Integrated)
-// ==============================================
-
 import React, { useState } from 'react';
-import OpenAI from "openai";
 import { LineChart, Line, XAxis, YAxis, Tooltip } from 'recharts';
 
 // =============================
-// 🔐 KEYS (set in Vercel env)
+// 🔐 KEYS & CONFIG
 // =============================
-const openai = new OpenAI({
-  apiKey: import.meta.env.VITE_OPENAI_KEY,
-  dangerouslyAllowBrowser: true // ⚠️ move to backend later
-});
-
+const GEMINI_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 const MARKET_KEY = import.meta.env.VITE_MARKET_KEY;
 
-// =============================
-// 🧠 MASTER PROMPT
-// =============================
-const MASTER_PROMPT = `You are an elite investment council.
-Each investor must think independently.
-Be decisive. Disagree. No vague answers.
-Return STRICT JSON only.`;
-
-// =============================
-// 📡 MARKET DATA
-// =============================
-const fetchStock = async (symbol) => {
-  const res = await fetch(`https://api.twelvedata.com/quote?symbol=${symbol}&apikey=${MARKET_KEY}`);
-  return await res.json();
-};
+const MASTER_PROMPT = `You are an elite investment council. Disagree. Be sharp. Return STRICT JSON only.`;
 
 export default function App() {
   const [input, setInput] = useState('');
@@ -42,175 +19,88 @@ export default function App() {
   const [loading, setLoading] = useState(false);
 
   // =============================
-  // 🧠 AI ANALYSIS (OpenAI)
+  // 🧠 AI CALL (Direct Fetch - No Library Needed)
   // =============================
-  const analyzeWithAI = async (stock, symbol) => {
-    const prompt = `
-${MASTER_PROMPT}
-
-REAL DATA:
-Symbol: ${symbol}
-Price: ${stock.price}
-PE: ${stock.pe}
-Volume: ${stock.volume}
-
-Return JSON:
-{
-  buffett:{thesis:"",risk:"",verdict:""},
-  munger:{thesis:"",risk:"",verdict:""},
-  lynch:{thesis:"",risk:"",verdict:""},
-  dalio:{thesis:"",risk:"",verdict:""},
-  soros:{thesis:"",risk:"",verdict:""},
-  wood:{thesis:"",risk:"",verdict:""},
-  summary:{final:"BUY/PASS/WATCH"}
-}
-`;
-
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        { role: "system", content: "You are hedge fund level investors." },
-        { role: "user", content: prompt }
-      ],
-      temperature: 0.7
+  const callGemini = async (prompt) => {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
     });
-
-    return response.choices[0].message.content;
+    const data = await response.json();
+    return data.candidates[0].content.parts[0].text;
   };
 
-  // =============================
-  // 🥊 DEBATE MODE
-  // =============================
-  const runDebate = async (data) => {
-    const prompt = `
-Investors now debate each other.
-Who is wrong? Who is right?
-Be sharp.
-
-Data:
-${JSON.stringify(data)}
-`;
-
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [{ role: "user", content: prompt }]
-    });
-
-    setDebate(response.choices[0].message.content);
-  };
-
-  // =============================
-  // 💰 PORTFOLIO ENGINE
-  // =============================
-  const handlePortfolio = (data, stock) => {
-    const votes = Object.values(data).filter(v => v?.verdict)
-      .reduce((a, r) => {
-        a[r.verdict] = (a[r.verdict] || 0) + 1;
-        return a;
-      }, {});
-
-    if (votes.OPPORTUNITY >= 4) {
-      const trade = {
-        symbol: input,
-        price: parseFloat(stock.price),
-        date: new Date().toLocaleDateString()
-      };
-
-      setPortfolio(prev => [...prev, trade]);
-      setChartData(prev => [...prev, { name: trade.symbol, value: trade.price }]);
-    }
-  };
-
-  // =============================
-  // 🚀 MAIN ANALYZE
-  // =============================
   const analyze = async () => {
     if (!input) return;
     setLoading(true);
-
     try {
-      const stock = await fetchStock(input);
-      const aiText = await analyzeWithAI(stock, input);
+      // 1. Fetch Market Data
+      const marketRes = await fetch(`https://api.twelvedata.com/quote?symbol=${input}&apikey=${MARKET_KEY}`);
+      const stock = await marketRes.json();
 
-      const json = JSON.parse(aiText.match(/\{[\s\S]*\}/)[0]);
+      // 2. Analysis Prompt
+      const analysisPrompt = `${MASTER_PROMPT} Analyze ${input} (Price: ${stock.price}). Return JSON: { "buffett":{"thesis":"","verdict":""}, "munger":{"thesis":"","verdict":""}, "lynch":{"thesis":"","verdict":""}, "summary":{"final":""} }`;
+      
+      const aiText = await callGemini(analysisPrompt);
+      const cleanJson = aiText.replace(/```json|```/g, "").trim();
+      const json = JSON.parse(cleanJson);
 
       setResults(json);
       setHistory(prev => [...prev, { symbol: input, decision: json.summary?.final }]);
-
-      runDebate(json);
-      handlePortfolio(json, stock);
+      
+      // 3. Trade Action
+      if (json.summary?.final === "BUY") {
+        setPortfolio(prev => [...prev, { symbol: input, price: stock.price }]);
+        setChartData(prev => [...prev, { name: input, value: parseFloat(stock.price) }]);
+      }
 
     } catch (e) {
-      alert("Error in AI or Market API");
+      alert("تأكد من صحة المفاتيح في Vercel");
     }
-
     setLoading(false);
   };
 
-  // =============================
-  // 🎨 UI
-  // =============================
   return (
-    <div className="p-6 max-w-7xl mx-auto" dir="rtl">
-      <h1 className="text-3xl font-bold">🏛️ Investment Council AI PRO</h1>
+    <div className="p-6 max-w-4xl mx-auto font-sans" dir="rtl">
+      <h1 className="text-3xl font-bold text-center mb-2">🏛️ مجلس الاستشارين الذكي</h1>
+      <p className="text-center text-gray-500 mb-6">بمنهجية التفكير النظمي - للباحث Abdulbasett</p>
 
-      <div className="flex gap-2 my-4">
-        <input
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          className="border p-3 flex-1"
-          placeholder="TSLA / AAPL / BTC ..."
+      <div className="flex gap-2 mb-8">
+        <input 
+          value={input} 
+          onChange={e => setInput(e.target.value.toUpperCase())}
+          className="border-2 border-black p-3 flex-1 rounded text-left" 
+          placeholder="أدخل رمز الشركة (مثل AAPL)"
         />
-        <button onClick={analyze} className="bg-black text-white px-6">
-          {loading ? "..." : "Analyze"}
+        <button onClick={analyze} className="bg-blue-600 text-white px-8 rounded font-bold">
+          {loading ? "جاري الاستدعاء..." : "استدعاء المجلس"}
         </button>
       </div>
 
-      {/* RESULTS */}
       {results && (
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-          {Object.keys(results).filter(k => k !== 'summary').map(k => (
-            <div key={k} className="border p-4 rounded">
-              <h3 className="font-bold">{k}</h3>
-              <p>{results[k].thesis}</p>
-              <p className="text-red-500">{results[k].risk}</p>
-              <span>{results[k].verdict}</span>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {['buffett', 'munger', 'lynch'].map(name => (
+            <div key={name} className="border-t-4 border-blue-500 p-4 bg-white shadow-lg rounded">
+              <h3 className="font-bold text-xl mb-2 capitalize">{name}</h3>
+              <p className="text-gray-700 text-sm leading-relaxed">{results[name]?.thesis}</p>
+              <div className="mt-4 font-black text-blue-800">{results[name]?.verdict}</div>
             </div>
           ))}
         </div>
       )}
 
-      {/* DEBATE */}
-      {debate && (
-        <div className="mt-6 bg-black text-white p-4 rounded">
-          <h2>🥊 Debate Mode</h2>
-          <p>{debate}</p>
+      {portfolio.length > 0 && (
+        <div className="mt-10 p-4 bg-gray-100 rounded">
+          <h2 className="font-bold mb-4">💰 محفظة Abdulbasett المقترحة</h2>
+          {portfolio.map((p, i) => (
+            <div key={i} className="flex justify-between border-b py-2 font-mono">
+              <span>{p.symbol}</span>
+              <span>${p.price}</span>
+            </div>
+          ))}
         </div>
       )}
-
-      {/* PORTFOLIO */}
-      <div className="mt-6">
-        <h2 className="font-bold">💰 Portfolio</h2>
-        {portfolio.map((p, i) => (
-          <div key={i}>{p.symbol} @ {p.price}</div>
-        ))}
-      </div>
-
-      {/* CHART */}
-      <LineChart width={400} height={200} data={chartData}>
-        <XAxis dataKey="name" />
-        <YAxis />
-        <Tooltip />
-        <Line type="monotone" dataKey="value" />
-      </LineChart>
-
-      {/* HISTORY */}
-      <div className="mt-6">
-        <h2>📊 History</h2>
-        {history.map((h, i) => (
-          <div key={i}>{h.symbol} → {h.decision}</div>
-        ))}
-      </div>
     </div>
   );
 }
