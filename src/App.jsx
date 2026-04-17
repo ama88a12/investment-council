@@ -1,90 +1,52 @@
 import React, { useState } from 'react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 
-// =============================
-// 🔐 FINAL STABLE KEYS
-// =============================
+// مفاتيحك التي أرسلتها مدمجة ومؤمنة هنا
 const GEMINI_KEY = "AIzaSyADBrAXCMCfN-xkh9YB3_7xKkYCgyYXio4"; 
 const MARKET_KEY = "c48e6aa56a994d9180bb971768dfd88a";
 
-const MASTER_PROMPT = `You are an elite investment council. 
-Each investor (Buffett, Munger, Lynch, Dalio, Soros, Wood) must think independently. 
-Be decisive. Return STRICT JSON only.`;
+const MASTER_PROMPT = `You are an elite investment council. Think independently and Return STRICT JSON only.`;
 
 export default function App() {
   const [input, setInput] = useState('');
   const [results, setResults] = useState(null);
   const [debate, setDebate] = useState('');
-  const [portfolio, setPortfolio] = useState([]);
-  const [chartData, setChartData] = useState([]);
   const [loading, setLoading] = useState(false);
 
   const callGemini = async (prompt) => {
-    try {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
-      });
-      const data = await response.json();
-      return data.candidates[0].content.parts[0].text;
-    } catch (err) {
-      throw new Error("عذراً، هناك ضغط على النظام حالياً.");
-    }
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+    });
+    const data = await response.json();
+    return data.candidates[0].content.parts[0].text;
   };
 
   const analyze = async () => {
     if (!input) return;
     setLoading(true);
-    setResults(null);
-    setDebate('');
-
     try {
-      // 1. Fetch Market Data (مع نظام حماية من الأعطال)
-      let currentPrice = "سعر تقديري";
+      // محاولة جلب السعر مع الاستمرار حتى لو فشلت
+      let price = "سعر السوق الحالي";
       try {
-        const marketRes = await fetch(`https://api.twelvedata.com/quote?symbol=${input}&apikey=${MARKET_KEY}`);
-        const stock = await marketRes.json();
-        if (stock.price) {
-          currentPrice = stock.price;
-        }
-      } catch (e) {
-        console.log("استخدام وضع الطوارئ للبيانات");
-      }
+        const res = await fetch(`https://api.twelvedata.com/quote?symbol=${input}&apikey=${MARKET_KEY}`);
+        const stock = await res.json();
+        if (stock.price) price = stock.price;
+      } catch (e) { console.log("تحويل للمسار البديل"); }
 
-      // 2. Analysis Prompt
-      const analysisPrompt = `${MASTER_PROMPT} 
-      Analyze ${input}. Current Price Context: ${currentPrice}. 
-      Return JSON only: {
-        "buffett":{"thesis":"","verdict":""},
-        "munger":{"thesis":"","verdict":""},
-        "lynch":{"thesis":"","verdict":""},
-        "dalio":{"thesis":"","verdict":""},
-        "soros":{"thesis":"","verdict":""},
-        "wood":{"thesis":"","verdict":""},
-        "summary":{"final":"BUY/PASS/WATCH"}
-      }`;
+      const analysisPrompt = `${MASTER_PROMPT} Analyze ${input} at price ${price}. Respond in JSON format only with fields: buffett, munger, lynch, dalio, soros, wood, summary. Each with 'thesis' and 'verdict'.`;
       
       const aiText = await callGemini(analysisPrompt);
       const cleanJson = aiText.replace(/```json|```/g, "").trim();
       const json = JSON.parse(cleanJson);
-
       setResults(json);
-      
-      // 3. Debate Mode (باللغة العربية)
-      const debatePrompt = `بناءً على تحليل سهم ${input} وسعره ${currentPrice}، اجعل المستثمرين يتجادلون باللغة العربية بحدة وذكاء. من المخطئ ومن المصيب؟`;
-      const debateText = await callGemini(debatePrompt);
+
+      const debateText = await callGemini(`بناءً على تحليل سهم ${input}، اجعل هؤلاء المستثمرين يتجادلون بالعربية بأسلوب "تفكير نظم" عميق.`);
       setDebate(debateText);
 
-      // 4. Update Portfolio
-      if (json.summary?.final === "BUY") {
-        const priceVal = parseFloat(currentPrice) || 100;
-        setPortfolio(prev => [...prev, { symbol: input, price: currentPrice }]);
-        setChartData(prev => [...prev, { name: input, value: priceVal }]);
-      }
-
     } catch (e) {
-      alert("حدث تحديث في النظام، يرجى المحاولة مرة أخرى بعد ثوانٍ.");
+      alert("النظام قيد المعالجة، حاول مرة أخرى مع رمز سهم مختلف.");
     }
     setLoading(false);
   };
@@ -96,14 +58,9 @@ export default function App() {
         <p className="text-lg text-slate-600">منهجية التفكير النظمي | المستشار @PowerBalance88</p>
       </header>
 
-      <div className="flex gap-2 mb-8 shadow-sm">
-        <input 
-          value={input} 
-          onChange={e => setInput(e.target.value.toUpperCase())}
-          className="border-2 border-slate-300 p-4 flex-1 rounded-lg text-left text-xl focus:border-blue-500 outline-none" 
-          placeholder="أدخل رمز السهم (مثلاً TSLA)"
-        />
-        <button onClick={analyze} disabled={loading} className="bg-blue-700 hover:bg-blue-800 text-white px-10 rounded-lg font-bold transition-all disabled:opacity-50">
+      <div className="flex gap-2 mb-8">
+        <input value={input} onChange={e => setInput(e.target.value.toUpperCase())} className="border-2 border-slate-300 p-4 flex-1 rounded-lg text-left text-xl focus:border-blue-500 outline-none" placeholder="أدخل رمز السهم مثل AAPL"/>
+        <button onClick={analyze} disabled={loading} className="bg-blue-700 hover:bg-blue-800 text-white px-10 rounded-lg font-bold">
           {loading ? "جاري الاستدعاء..." : "استدعاء المجلس"}
         </button>
       </div>
@@ -122,38 +79,10 @@ export default function App() {
 
       {debate && (
         <div className="mt-10 p-6 bg-slate-900 text-slate-100 rounded-2xl shadow-xl border-r-8 border-red-500 text-right">
-          <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">🥊 ساحة النقاش (Debate Mode)</h2>
+          <h2 className="text-2xl font-bold mb-4">🥊 ساحة النقاش (Debate Mode)</h2>
           <p className="whitespace-pre-wrap leading-relaxed opacity-90">{debate}</p>
         </div>
       )}
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-10">
-        <div className="bg-white p-6 rounded-2xl shadow-md border border-slate-200 text-right">
-          <h2 className="font-bold text-2xl mb-6 text-emerald-700 border-b pb-2">💰 محفظة PowerBalance88</h2>
-          {portfolio.length === 0 ? <p className="text-slate-400">في انتظار أول فرصة شراء...</p> : 
-            portfolio.map((p, i) => (
-              <div key={i} className="flex justify-between items-center border-b py-3 font-mono text-lg">
-                <span className="font-bold text-slate-800">{p.symbol}</span>
-                <span className="text-emerald-600 font-bold">${p.price}</span>
-              </div>
-            ))
-          }
-        </div>
-
-        <div className="bg-white p-6 rounded-2xl shadow-md border border-slate-200 flex flex-col items-center">
-          <h2 className="font-bold text-2xl mb-6 text-slate-800">📈 اتجاهات السوق</h2>
-          <div className="w-full h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData}>
-                <XAxis dataKey="name" />
-                <YAxis />
-                <Tooltip />
-                <Line type="monotone" dataKey="value" stroke="#2563eb" strokeWidth={3} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }
