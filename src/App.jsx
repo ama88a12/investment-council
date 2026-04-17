@@ -2,10 +2,10 @@ import React, { useState } from 'react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 
 // =============================
-// 🔐 KEYS & CONFIG
+// 🔐 FINAL HARDCODED KEYS - حل مشكلة التوصيل النهائي
 // =============================
-const GEMINI_KEY = import.meta.env.VITE_GEMINI_API_KEY;
-const MARKET_KEY = import.meta.env.VITE_MARKET_KEY;
+const GEMINI_KEY = "AIzaSyADBrAXCMCfN-xkh9YB3_7xKkYCgyYXio4"; 
+const MARKET_KEY = "c48e6aa56a994d9180bb971768dfd88a";
 
 const MASTER_PROMPT = `You are an elite investment council. 
 Each investor (Buffett, Munger, Lynch, Dalio, Soros, Wood) must think independently. 
@@ -20,18 +20,20 @@ export default function App() {
   const [chartData, setChartData] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  // =============================
-  // 🧠 AI CALL (Direct Fetch)
-  // =============================
   const callGemini = async (prompt) => {
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
-    });
-    const data = await response.json();
-    if (!data.candidates) throw new Error("API Key Issue");
-    return data.candidates[0].content.parts[0].text;
+    try {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+      });
+      
+      const data = await response.json();
+      if (!data.candidates) throw new Error(data.error?.message || "مشكلة في مفتاح جيميناي");
+      return data.candidates[0].content.parts[0].text;
+    } catch (err) {
+      throw new Error("فشل الاتصال بـ Gemini: " + err.message);
+    }
   };
 
   const analyze = async () => {
@@ -41,11 +43,13 @@ export default function App() {
       // 1. Fetch Market Data
       const marketRes = await fetch(`https://api.twelvedata.com/quote?symbol=${input}&apikey=${MARKET_KEY}`);
       const stock = await marketRes.json();
+      
+      if (!stock.price) throw new Error("لم يتم العثور على بيانات السهم. تأكد من الرمز.");
 
       // 2. Analysis Prompt
       const analysisPrompt = `${MASTER_PROMPT} 
       Analyze ${input}. Current Price: ${stock.price}. 
-      Return JSON: {
+      Return JSON only: {
         "buffett":{"thesis":"","verdict":""},
         "munger":{"thesis":"","verdict":""},
         "lynch":{"thesis":"","verdict":""},
@@ -62,8 +66,8 @@ export default function App() {
       setResults(json);
       setHistory(prev => [...prev, { symbol: input, decision: json.summary?.final }]);
       
-      // 3. Debate Mode
-      const debatePrompt = `Based on this data: ${cleanJson}, make these investors debate each other briefly. Who is wrong?`;
+      // 3. Debate Mode (باللغة العربية)
+      const debatePrompt = `بناءً على هذا التحليل: ${cleanJson}، اجعل هؤلاء المستثمرين يتجادلون فيما بينهم باللغة العربية حول سهم ${input}. من منهم المخطئ؟ اجعل النقاش حاداً وذكياً.`;
       const debateText = await callGemini(debatePrompt);
       setDebate(debateText);
 
@@ -74,7 +78,7 @@ export default function App() {
       }
 
     } catch (e) {
-      alert("عذراً أبا شهد، تأكد من إعدادات الـ API في Vercel");
+      alert(`عذراً أبا شهد: ${e.message}`);
     }
     setLoading(false);
   };
@@ -83,7 +87,7 @@ export default function App() {
     <div className="p-4 max-w-6xl mx-auto font-sans bg-gray-50 min-h-screen" dir="rtl">
       <header className="text-center py-6">
         <h1 className="text-4xl font-black text-slate-900 mb-2">🏛️ مجلس الاستثمار الذكي</h1>
-        <p className="text-lg text-slate-600">منهجية التفكير النظمي | المستشار Abdulbasett</p>
+        <p className="text-lg text-slate-600">منهجية التفكير النظمي | المستشار @PowerBalance88</p>
       </header>
 
       <div className="flex gap-2 mb-8 shadow-sm">
@@ -93,7 +97,7 @@ export default function App() {
           className="border-2 border-slate-300 p-4 flex-1 rounded-lg text-left text-xl focus:border-blue-500 outline-none" 
           placeholder="أدخل رمز السهم (مثلاً AAPL أو TSLA)"
         />
-        <button onClick={analyze} className="bg-blue-700 hover:bg-blue-800 text-white px-10 rounded-lg font-bold transition-all">
+        <button onClick={analyze} disabled={loading} className="bg-blue-700 hover:bg-blue-800 text-white px-10 rounded-lg font-bold transition-all">
           {loading ? "جاري الاستدعاء..." : "استدعاء المجلس"}
         </button>
       </div>
@@ -101,7 +105,7 @@ export default function App() {
       {results && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {Object.keys(results).filter(k => k !== 'summary').map(name => (
-            <div key={name} className="bg-white border-b-4 border-blue-600 p-5 shadow-md rounded-xl hover:shadow-lg transition-shadow">
+            <div key={name} className="bg-white border-b-4 border-blue-600 p-5 shadow-md rounded-xl hover:shadow-lg transition-shadow text-right">
               <h3 className="font-bold text-2xl mb-3 capitalize text-blue-900 border-b pb-2">{name}</h3>
               <p className="text-slate-700 leading-relaxed text-sm mb-4">{results[name]?.thesis}</p>
               <div className="font-black text-lg text-blue-700 bg-blue-50 p-2 rounded text-center">{results[name]?.verdict}</div>
@@ -111,15 +115,15 @@ export default function App() {
       )}
 
       {debate && (
-        <div className="mt-10 p-6 bg-slate-900 text-slate-100 rounded-2xl shadow-xl border-r-8 border-red-500">
+        <div className="mt-10 p-6 bg-slate-900 text-slate-100 rounded-2xl shadow-xl border-r-8 border-red-500 text-right">
           <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">🥊 ساحة النقاش (Debate Mode)</h2>
           <p className="whitespace-pre-wrap leading-relaxed opacity-90">{debate}</p>
         </div>
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-10">
-        <div className="bg-white p-6 rounded-2xl shadow-md border border-slate-200">
-          <h2 className="font-bold text-2xl mb-6 text-emerald-700 border-b pb-2">💰 محفظة Abdulbasett</h2>
+        <div className="bg-white p-6 rounded-2xl shadow-md border border-slate-200 text-right">
+          <h2 className="font-bold text-2xl mb-6 text-emerald-700 border-b pb-2">💰 محفظة PowerBalance88</h2>
           {portfolio.length === 0 ? <p className="text-slate-400">في انتظار أول فرصة شراء...</p> : 
             portfolio.map((p, i) => (
               <div key={i} className="flex justify-between items-center border-b py-3 font-mono text-lg">
